@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+ ! Excerpted from "Reactive Programming with RxJS",
+ ! published by The Pragmatic Bookshelf.
+ ! Copyrights apply to this code. It may not be used to create training material,
+ ! courses, books, articles, and the like. Contact us if you are in doubt.
+ ! We make no guarantees that this code is fit for any purpose.
+ ! Visit http://www.pragmaticprogrammer.com/titles/smreactjs for more book information.
+-->
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+
+    <!--<script src="node_modules/es6-module-loader/dist/es6-module-loader-dev.js"></script>-->
+    <script src="node_modules/systemjs/dist/system.src.js"></script>
+    <script src="node_modules/rx/dist/rx.all.js"></script>
+    <script src="node_modules/rx-dom/dist/rx.dom.js"></script>
+
+    <title>Spaceship Reactive</title>
+    <style type="text/css">
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+
+      
+    </style>
+    
+    <script>
+        System.config({
+            baseUrl: "dist/app/spaceships",
+            defaultJSExtensions: true
+        });
+
+        System.import('dist/app/spaceships/boot.js');
+    </script>
+  </head>
+
+  <body>
+    
+  </body>
+</html>

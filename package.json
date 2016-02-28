@@ -1,0 +1,28 @@
+{
+  "name": "rxjs-book",
+  "version": "0.0.0",
+  "description": "My experiments using RxJs that uses book examples",
+  "main": "index.js",
+  "scripts": {
+    "lite": "lite-server",
+    "tsc": "node_modules/.bin/tsc",
+    "tsc:w": "node_modules/.bin/tsc -w",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "concurrent \"npm run tsc:w\" \"npm run lite\""
+  },
+  "keywords": [
+    "rxjs"
+  ],
+  "author": "christianacca",
+  "license": "MIT",
+  "dependencies": {
+    "rx": "^4.0.8",
+    "rx-dom": "^7.0.3",
+    "systemjs": "^0.19.17"
+  },
+  "devDependencies": {
+    "concurrently": "^1.0.0",
+    "lite-server": "^1.3.4",
+    "typescript": "^1.7.5"
+  }
+}
