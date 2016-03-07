@@ -4,8 +4,7 @@ type Star = {
 
 interface Coordinate {
     x: number,
-    y: number,
-    isVisible?: boolean
+    y: number
 }
 
 interface CoordinatePositionState<T extends Coordinate> {
@@ -13,20 +12,19 @@ interface CoordinatePositionState<T extends Coordinate> {
     previous: T[]
 }
 
+interface Collision {
+    ship: SpaceShip,
+    shot: Coordinate
+}
+
 class SpaceShip implements Coordinate {
     x: number;
     y: number;
-    isDestroyed = false;
     constructor({ x, y} = { x: 0, y: 0}) {
         this.x = x;
         this.y = y;
     }
-    tryHit(shots: Coordinate[]) {
-        if (this.isDestroyed) return;
-        
-        this.isDestroyed = shots.some(shot => SpaceShip.isCollision(this, shot));
-    }
-    private static isCollision(target1: Coordinate, target2: Coordinate) {
+    static isCollision(target1: Coordinate, target2: Coordinate) {
         return (target1.x > target2.x - 20 && target1.x < target2.x + 20) &&
                 (target1.y > target2.y - 20 && target1.y < target2.y + 20);
     }
@@ -95,6 +93,19 @@ export class Game {
         this.HERO_Y = this.gameCanvas.height - 30;
         this.animationTicker$ = Rx.Observable.interval(40).publish();
     }
+    
+    private createCollissions(heroShots$: Rx.Observable<Coordinate[]>, enemySpaceShips$: Rx.Observable<SpaceShip[]>){
+        return Rx.Observable.combineLatest(heroShots$, enemySpaceShips$, (shots, ships) => {
+            return shots
+                .map(shot => {
+                    const ship = ships.filter(ship => SpaceShip.isCollision(ship, shot))[0];
+                    return { ship, shot };
+                })
+                .filter(collision => collision.ship !== undefined);
+        })
+        .flatMap(collisions => Rx.Observable.fromArray(collisions))
+    }
+    
     private createHeroSpaceShip$(){
         return this.gameCanvas.getMouseMoves$()
             .map(mousePos => {
@@ -108,7 +119,7 @@ export class Game {
             }));
     }
     
-    private createEnemySpaceShips$($heroShots: Rx.Observable<Coordinate[]>){
+    private createEnemySpaceShips$(heroShots$: Rx.Observable<Coordinate[]>, collisions$: Rx.Observable<Collision>){
         const ENEMY_FREQ = 1500;
         const initialState: CoordinatePositionState<SpaceShip> = {
             current: [],
@@ -127,15 +138,9 @@ export class Game {
                 Game.moveGameElements(state, this.gameCanvas, Game.moveEnemyShip);
                 return state;
             })
-            .withLatestFrom($heroShots, (state, shots) => {
-                const { current } = state;
-                current.forEach(ship => {
-                    ship.tryHit(shots);
-                });
-                const destroyedShips = current.filter(ship => ship.isDestroyed);
-                destroyedShips.forEach(ship => {
-                    Game.removeInstance(current, ship);
-                });  
+            .combineLatest(collisions$.startWith(null), (state, collision) => {
+                const hitShip = state.current.filter(ship => ship === (collision && collision.ship))[0];
+                Game.removeInstance(state.current, hitShip);
                 return state;
             })
             .filter(state => state.current.length > 0)
@@ -150,8 +155,8 @@ export class Game {
         };
     }
     
-    private createHeroShots$(heroShip$: Rx.IObservable<SpaceShip>) {
         // note: an alternative solution would be to use mergeScan
+    private createHeroShots$(heroShip$: Rx.IObservable<SpaceShip>, collisions$: Rx.Observable<Collision>) {
         // (see: http://codepen.io/christianacca/pen/MyaOgY?editors=0011)
         let initialState: CoordinatePositionState<Coordinate> = {
             current: [],
@@ -169,6 +174,11 @@ export class Game {
             }, initialState)
             .combineLatest(this.animationTicker$, (state, _) => {
                 Game.moveGameElements(state, this.gameCanvas, Game.moveHeroShot);
+                return state;
+            })
+            .combineLatest(collisions$.startWith(null), (state, collision) => {
+                const successfulShot = state.current.filter(shot => shot === (collision && collision.shot))[0];
+                Game.removeInstance(state.current, successfulShot);
                 return state;
             })
             .filter(state => state.current.length > 0)
@@ -219,6 +229,12 @@ export class Game {
         }
         return index;
     }
+    private static removeInstances<T>(list: Array<T>, instances: Array<T>) {
+        instances.forEach(function(instance) {
+            Game.removeInstance(list, instance);
+        });
+    }
+
     private renderScene({ stars, heroSpaceShip, enemySpaceShips, heroShots}: { stars: Star[], heroSpaceShip: SpaceShip, enemySpaceShips: SpaceShip[], heroShots: Coordinate[] }){
         this.gameCanvas.paintStars(stars);
         this.gameCanvas.paintSpaceShip(heroSpaceShip);
@@ -232,14 +248,21 @@ export class Game {
     run() {
         let stars$ = this.createStars$();
         let heroSpaceShip$ = this.createHeroSpaceShip$();
-        let heroShots$ = this.createHeroShots$(heroSpaceShip$).share();
-        let enemySpaceShips$ = this.createEnemySpaceShips$(heroShots$);
+        // note: we're using a subject to break a circular dependency eg heroShots$->collisions$->heroShots$
+        // note: wanted createCollissions to return an array of collisions but this caused an infinite recursion resulting in the browser locking up!
+        // todo: solve the fact that trying to create observable all the inputs that change the stream of items emitted at the source of declaration
+        // will result in these cycles. how does cycle.js solve it. 
+        let collisionsProxy = new Rx.Subject<Collision>();
+        let heroShots$ = this.createHeroShots$(heroSpaceShip$, collisionsProxy).share();
+        let enemySpaceShips$ = this.createEnemySpaceShips$(heroShots$, collisionsProxy).share();
+        let collisions$ = this.createCollissions(heroShots$, enemySpaceShips$);
         
         let game$ = Rx.Observable.combineLatest(stars$, heroSpaceShip$, enemySpaceShips$, heroShots$, (stars, heroSpaceShip, enemySpaceShips, heroShots) => {
             return {stars, heroSpaceShip, enemySpaceShips, heroShots};
         });
         
         game$.subscribe(actors => this.renderScene(actors));
+        collisions$.subscribe(collisionsProxy);
         this.animationTicker$.connect()
     }
 }
