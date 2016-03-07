@@ -236,11 +236,7 @@ export class Game {
     }
     run() {
         let stars$ = this.createStars$();
-        let heroSpaceShip$ = this.createHeroSpaceShip$();
-        // note: we're using a subject to break a circular dependency eg heroShots$->collisions$->heroShots$
-        // note: wanted createCollissions to return an array of collisions but this caused an infinite recursion resulting in the browser locking up!
-        // todo: solve the fact that trying to create observable all the inputs that change the stream of items emitted at the source of declaration
-        // will result in these cycles. how does cycle.js solve it. 
+        let heroSpaceShip$ = this.createHeroSpaceShip$(); 
         let heroShots$ = this.createHeroShots$(heroSpaceShip$).share();
         let enemySpaceShips$ = this.createEnemySpaceShips$().share();
         let collisions$ = this.createCollissions(heroShots$, enemySpaceShips$).startWith([]);
