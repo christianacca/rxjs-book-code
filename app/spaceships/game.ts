@@ -78,7 +78,13 @@ export default class Game {
         };
     }
     private createScore$(heroHits$: Rx.Observable<Collission[]>){
-        return heroHits$.scan((score, collissions) => score + collissions.length, 0)
+        const bonusScores$ = heroHits$.bufferWithTime(5000)
+                .map(buffer => {
+                    const count = buffer.reduce((acc, collissions) => acc + collissions.length, 0)
+                    return count > 2 ? count * 10 : 0
+                });
+        const normalScore$ = heroHits$.map(collissions => collissions.length);
+        return normalScore$.merge(bonusScores$).scan((score, current) => score + current, 0)
     }
     private static createShot({x,y}: Coordinate){
         return {x, y, hasHit: false};
@@ -135,10 +141,10 @@ export default class Game {
     private createEnemyShotFrequency$(currentScore$: Rx.Observable<number>) {
         const initialRate = 2000;
         return currentScore$.map(score => {
-            if (score > 5){
-                return 700;
-            } else if (score > 2) {
+            if (score > 20){
                 return 1000;
+            } else if (score > 10) {
+                return 1500;
             } else {
                 return initialRate;
             }
