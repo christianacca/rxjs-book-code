@@ -1,33 +1,21 @@
+import "./rx-custom-operators";
+
 type Star = {
     size: number
 } & Coordinate
 
 interface Coordinate {
-    x: number,
+    x: number;
     y: number
 }
 
-interface CoordinatePositionState<T extends Coordinate> {
-    current: T[],
-    previous: T[]
+interface Hittable extends Coordinate {
+    hasHit?: boolean;
 }
 
 interface Collision {
-    ship: SpaceShip,
-    shot: Coordinate
-}
-
-class SpaceShip implements Coordinate {
-    x: number;
-    y: number;
-    constructor({ x, y} = { x: 0, y: 0}) {
-        this.x = x;
-        this.y = y;
-    }
-    static isCollision(target1: Coordinate, target2: Coordinate) {
-        return (target1.x > target2.x - 20 && target1.x < target2.x + 20) &&
-                (target1.y > target2.y - 20 && target1.y < target2.y + 20);
-    }
+    ship: Hittable;
+    shot: Hittable;
 }
 
 export class GameCanvas {
@@ -64,7 +52,10 @@ export class GameCanvas {
     getSpacebars$(){
         return Rx.Observable.fromEvent<KeyboardEvent>(this.surface, "keydown").filter(key => key.keyCode === 32);
     }
-    isVisible({x, y}: Coordinate){
+    isVisible(coordinate: Coordinate): boolean;
+    isVisible(y: number): boolean;
+    isVisible(value: Coordinate | number ) : boolean{
+        let y = typeof value === "number" ? value : value.y;
         return y <= this.height && y >= 0;
     }
     paintSpaceShip({x, y}: Coordinate){
@@ -93,52 +84,54 @@ export class Game {
         this.HERO_Y = this.gameCanvas.height - 30;
         this.animationTicker$ = Rx.Observable.interval(40).publish();
     }
-    
-    private createCollissions(heroShots$: Rx.Observable<Coordinate[]>, enemySpaceShips$: Rx.Observable<SpaceShip[]>){
-        return Rx.Observable.combineLatest(heroShots$, enemySpaceShips$, (shots, ships) => {
+    private static applyCollision(collisions: Collision[]) {
+        collisions.forEach(c => {
+            c.ship.hasHit = true;
+            c.shot.hasHit = true;
+        });
+    }
+    private createCollissions$(heroShots$: Rx.Observable<Hittable[]>, enemySpaceShips$: Rx.Observable<Hittable[]>){
+        return heroShots$.combineLatest(enemySpaceShips$, (shots, ships) => {
             return shots
                 .map(shot => {
-                    const ship = ships.filter(ship => SpaceShip.isCollision(ship, shot))[0];
+                    const ship = ships.filter(ship => Game.isCollision(ship, shot))[0];
                     return { ship, shot };
                 })
                 .filter(collision => collision.ship !== undefined);
         });
     }
-    
     private createHeroSpaceShip$(){
         return this.gameCanvas.getMouseMoves$()
-            .map(mousePos => {
-                return new SpaceShip({ 
+            .map(mousePos => ({ 
                     x: mousePos.clientX,
                     y: this.HERO_Y
-                })
-            }).startWith(new SpaceShip({
+                }))
+            .startWith({
                 x: this.gameCanvas.width / 2,
                 y: this.HERO_Y
-            }));
+            });
     }
     
     private createEnemySpaceShips$(){
+        // note: an alternative solution would be to use mergeScan rather than combineActive
         const ENEMY_FREQ = 1500;
-        const initialState: CoordinatePositionState<SpaceShip> = {
-            current: [],
-            previous: []
-        };
         return Rx.Observable.interval(ENEMY_FREQ)
-            .scan((state, _) => {
-                const pos = {
+            .map<Hittable>(_ => ({
                     x: Math.floor(Math.random() * this.gameCanvas.width),
                     y: 30
-                };
-                state.current.push(new SpaceShip(pos));
-                return state;
-            }, initialState)
-            .combineLatest(this.animationTicker$, (state, _) => {
-                Game.moveGameElements(state, this.gameCanvas, Game.moveEnemyShip);
-                return state;
+            }))
+            .map(ship => {
+                return this.animationTicker$
+                    .scan(Game.moveEnemyShip, ship.y)
+                    .takeWhile(y => this.gameCanvas.isVisible(y) && !ship.hasHit)
+                    .do(y => {
+                        ship.y = y;
+                    })
+                    .map(_ => ship)
+                    .startWith(ship);
             })
-            .filter(state => state.current.length > 0)
-            .map(state => state.current);
+            .combineActive<Hittable>()
+            .startWith([]);
     }
     
     private createStar() {
@@ -149,30 +142,25 @@ export class Game {
         };
     }
     
-        // note: an alternative solution would be to use mergeScan
-    private createHeroShots$(heroShip$: Rx.IObservable<SpaceShip>) {
-        // (see: http://codepen.io/christianacca/pen/MyaOgY?editors=0011)
-        let initialState: CoordinatePositionState<Coordinate> = {
-            current: [],
-            previous: []
-        }
-        
+    private createHeroShots$(heroShip$: Rx.IObservable<Hittable>) {  
+        // note: an alternative solution would be to use mergeScan rather than combineActive     
         return Rx.Observable.merge<UIEvent>(this.gameCanvas.getClicks$(), this.gameCanvas.getSpacebars$())
             .sample(200)
             .withLatestFrom(heroShip$, (shot, ship) => {
-                return { x: ship.x, y: ship.y, isVisible: true };
+                return { x: ship.x, y: ship.y, hasHit: false };
             })
-            .scan((state, shot) => {
-                state.current.push(shot);
-                return state;
-            }, initialState)
-            .combineLatest(this.animationTicker$, (state, _) => {
-                Game.moveGameElements(state, this.gameCanvas, Game.moveHeroShot);
-                return state;
+            .map(shot => {
+                return this.animationTicker$
+                    .scan(Game.moveHeroShot, shot.y)
+                    .takeWhile(y => this.gameCanvas.isVisible(y) && !shot.hasHit)
+                    .do(y => {
+                        shot.y = y;
+                    })
+                    .map(_ => shot)
+                    .startWith(shot)
             })
-            .filter(state => state.current.length > 0)
-            .map(state => state.current)
-            .startWith([] as Coordinate[]);
+            .combineActive<Hittable>()
+            .startWith([]);
     }
     
     private createStars$() {
@@ -187,22 +175,15 @@ export class Game {
                     });
             });
     }
-    private static moveEnemyShip(ship: Coordinate){
-        ship.y += 5;
+    private static isCollision(target1: Coordinate, target2: Coordinate) {
+        return (target1.x > target2.x - 20 && target1.x < target2.x + 20) &&
+                (target1.y > target2.y - 20 && target1.y < target2.y + 20);
     }
-    private static moveGameElements<T extends Coordinate>(state: CoordinatePositionState<T>, gameCanvas: GameCanvas, move: (item: Coordinate) => void) : void {
-        const { current, previous } = state;
-        previous.forEach(item => {
-            move(item);
-        });
-        const offscreenElements = current.filter(item => !gameCanvas.isVisible(item))
-        offscreenElements.forEach(item => {
-            Game.removeInstance(current, item);
-        });                
-        state.previous = current.slice();
+    private static moveEnemyShip(y: number){
+        return y+5;
     }
-    private static moveHeroShot(shot: Coordinate){
-        shot.y -= 15;
+    private static moveHeroShot(y: number){
+        return y-15;
     }
     private moveStar(star: Star){
         if (star.y >= this.gameCanvas.height) {
@@ -224,7 +205,7 @@ export class Game {
         });
     }
 
-    private renderScene({ stars, heroSpaceShip, enemySpaceShips, heroShots}: { stars: Star[], heroSpaceShip: SpaceShip, enemySpaceShips: SpaceShip[], heroShots: Coordinate[] }){
+    private renderScene({ stars, heroSpaceShip, enemySpaceShips, heroShots}: { stars: Star[], heroSpaceShip: Hittable, enemySpaceShips: Hittable[], heroShots: Coordinate[] }){
         this.gameCanvas.paintStars(stars);
         this.gameCanvas.paintSpaceShip(heroSpaceShip);
         enemySpaceShips.forEach(ship => {
@@ -237,22 +218,17 @@ export class Game {
     run() {
         let stars$ = this.createStars$();
         let heroSpaceShip$ = this.createHeroSpaceShip$(); 
-        let heroShots$ = this.createHeroShots$(heroSpaceShip$).share();
+        let heroShots$ = this.createHeroShots$(heroSpaceShip$).share().do(() => console.log("shot"));
         let enemySpaceShips$ = this.createEnemySpaceShips$().share();
-        let collisions$ = this.createCollissions(heroShots$, enemySpaceShips$).startWith([]);
+        let collisions$ = this.createCollissions$(heroShots$, enemySpaceShips$).startWith([])
+            .do(Game.applyCollision);
         
-        let nonCollided$ = Rx.Observable.combineLatest(collisions$, heroShots$, enemySpaceShips$, (collisions, heroShots, enemySpaceShips) => {
-            Game.removeInstances(heroShots, collisions.map(c => c.shot));
-            Game.removeInstances(enemySpaceShips, collisions.map(c => c.ship));
-            return { heroShots, enemySpaceShips}
-        });
-        
-        let game$ = Rx.Observable.combineLatest(stars$, heroSpaceShip$, nonCollided$, (stars, heroSpaceShip, {enemySpaceShips, heroShots}) => {
+        let game$ = Rx.Observable.combineLatest(stars$, heroSpaceShip$, enemySpaceShips$, heroShots$, collisions$, (stars, heroSpaceShip, enemySpaceShips, heroShots) => {
             return {stars, heroSpaceShip, enemySpaceShips, heroShots};
         });
         
         game$.subscribe(actors => this.renderScene(actors));
-        this.animationTicker$.connect()
+        this.animationTicker$.connect();
     }
 }
 
