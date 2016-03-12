@@ -46,8 +46,16 @@ export default class GameCanvas {
     paintEnemySpaceShip({x, y}: Coordinate){
         this.drawTriangle(x, y, 20, "#ff0000", "down");
     }
+    paintEnemyShot({x, y}: Coordinate){
+        this.drawTriangle(x, y, 5, '#00ffff', 'down');
+    }
     paintHeroShot({x, y}: Coordinate){
         this.drawTriangle(x, y, 5, '#ffff00', 'up');
+    }
+    paintScore(score: number) {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = 'bold 26px sans-serif';
+        this.ctx.fillText('Score: ' + score, 40, 43);
     }
     paintStars(stars: Star[]) {
         this.ctx.fillStyle = '#000000';
