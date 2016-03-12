@@ -10,8 +10,8 @@ interface Collission {
 
 interface Scene { 
     stars: Star[], 
-    heroSpaceShip: Hittable, 
-    enemySpaceShips: Hittable[], 
+    heroShip: Hittable, 
+    enemyShips: Hittable[], 
     heroShots: Coordinate[], 
     enemyShots: Coordinate[],
     score: number
@@ -44,7 +44,7 @@ export default class Game {
         })
         .filter(c => c.length > 0);
     }
-    private createHeroSpaceShip$(){
+    private createHeroShip$(){
         return this.gameCanvas.getMouseMoves$()
             .map(mousePos => ({ 
                     x: mousePos.clientX,
@@ -63,7 +63,7 @@ export default class Game {
                     y: 30
             }));
     }
-    private createEnemySpaceShips$(arrivingShips$: Rx.Observable<Hittable>){
+    private createEnemyShips$(arrivingShips$: Rx.Observable<Hittable>){
         return arrivingShips$
             .animateHittable(this.animationTicker$, Game.moveEnemyShip, y => this.gameCanvas.isVisible(y))
             .combineActive<Hittable>()
@@ -91,12 +91,12 @@ export default class Game {
             .combineActive<Hittable>()
             .startWith([]);
     }
-    private createEnemyShots$(arrivingShips$: Rx.Observable<Hittable>) {
+    private createEnemyShots$(arrivingShips$: Rx.Observable<Hittable>, fireRate$: Rx.Observable<number>) {
         return arrivingShips$.flatMap(ship => {
-            return Rx.Observable.interval(2000)
-                .takeWhile(_ => !ship.hasHit)
-                .map(_ => Game.createShot(ship))
-                .animateHittable(this.animationTicker$, Game.moveEnemyShot, y => this.gameCanvas.isVisible(y));
+            return fireRate$.flatMapLatest(rate => Rx.Observable.interval(rate))
+                    .takeWhile(_ => !ship.hasHit)
+                    .map(_ => Game.createShot(ship))
+                    .animateHittable(this.animationTicker$, Game.moveEnemyShot, y => this.gameCanvas.isVisible(y));
         })
         .combineActive<Hittable>()
     }
@@ -132,11 +132,24 @@ export default class Game {
             star.y += 3;
         }
     }
-
-    private renderScene({ stars, heroSpaceShip, enemySpaceShips, heroShots, enemyShots, score}: Scene){
+    private createEnemyShotFrequency$(currentScore$: Rx.Observable<number>) {
+        const initialRate = 2000;
+        return currentScore$.map(score => {
+            if (score > 5){
+                return 700;
+            } else if (score > 2) {
+                return 1000;
+            } else {
+                return initialRate;
+            }
+        })
+        .distinctUntilChanged()
+        .startWith(initialRate);
+    }
+    private renderScene({ stars, heroShip, enemyShips, heroShots, enemyShots, score}: Scene){
         this.gameCanvas.paintStars(stars);
-        this.gameCanvas.paintSpaceShip(heroSpaceShip);
-        enemySpaceShips.forEach(ship => {
+        this.gameCanvas.paintSpaceShip(heroShip);
+        enemyShips.forEach(ship => {
             this.gameCanvas.paintEnemySpaceShip(ship);
         });
         heroShots.forEach(shot => {
@@ -149,25 +162,25 @@ export default class Game {
     }
     run() {
         let stars$ = this.createStars$();
-        let heroSpaceShip$ = this.createHeroSpaceShip$(); 
-        let heroShots$ = this.createHeroShots$(heroSpaceShip$).share();
+        let heroShip$ = this.createHeroShip$().share(); 
+        let heroShots$ = this.createHeroShots$(heroShip$).share();
         let arrivingEnemies$ = this.createEnemyShipsArriving$().share();
-        let enemySpaceShips$ = this.createEnemySpaceShips$(arrivingEnemies$).share();
-        let enemyShots$ = this.createEnemyShots$(arrivingEnemies$).share();
-        let heroHits$ = this.createCollissions$(heroShots$, enemySpaceShips$).startWith([])
+        let enemyShips$ = this.createEnemyShips$(arrivingEnemies$).share();
+        let heroHits$ = this.createCollissions$(heroShots$, enemyShips$).startWith([])
             .do(Game.applyCollision)
-            .do(collissions => console.log("hero hits", collissions))
             .share();
-        let enemyHits$ = this.createCollissions$(enemyShots$, heroSpaceShip$.map(ship => [ship]))
+        let score$ = this.createScore$(heroHits$).share();
+        let fireRate$ = this.createEnemyShotFrequency$(score$).shareReplay(1);
+        let enemyShots$ = this.createEnemyShots$(arrivingEnemies$, fireRate$).share();
+        let enemyHits$ = this.createCollissions$(enemyShots$, heroShip$.map(ship => [ship]))
             .do(Game.applyCollision);
         let shotsShot$ = this.createCollissions$(heroShots$, enemyShots$).startWith([])
             .do(Game.applyCollision);
-        let score$ = this.createScore$(heroHits$);
         
         
         let game$ = Rx.Observable.combineLatest(
-            stars$, heroSpaceShip$, enemySpaceShips$, heroShots$, enemyShots$, score$, heroHits$, shotsShot$, (stars, heroSpaceShip, enemySpaceShips, heroShots, enemyShots, score) => {
-                return {stars, heroSpaceShip, enemySpaceShips, heroShots, enemyShots, score};
+            stars$, heroShip$, enemyShips$, heroShots$, enemyShots$, score$, heroHits$, shotsShot$, (stars, heroShip, enemyShips, heroShots, enemyShots, score) => {
+                return {stars, heroShip, enemyShips, heroShots, enemyShots, score};
         }).takeUntil(enemyHits$);
         
         game$.subscribe(actors => this.renderScene(actors));
