@@ -36,8 +36,8 @@
 {
 	"version": "0.1.0",
 
-	// The command is tsc. Assumes that tsc has been installed using npm install -g typescript
-	"command": "tsc",
+	// Run the typescript compiler locally installed
+	"command": "${cwd}/node_modules/.bin/tsc",
 
 	// The command is a shell script
 	"isShellCommand": true,

@@ -1,5 +1,11 @@
 var RxObsConstructor = (<any> Rx.Observable);   // this hack is neccessary because the .d.ts for RxJs declares Observable as an interface)
 
+declare module "rx" {
+    interface Observable<T> {
+        combineActive<TResult>() : Rx.Observable<TResult[]>
+    }
+}
+
 RxObsConstructor.prototype.combineActive = combineActive;
 
 export function combineActive<T>() : Rx.Observable<T[]> {
