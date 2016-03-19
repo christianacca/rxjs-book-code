@@ -1702,6 +1702,11 @@ declare namespace L {
           * Returns an array of all the layers added to the group.
           */
         getLayers(): T[];
+        
+        /**
+         * NOTE: I had to add this manually (should submit a pull request to get this added)
+         */
+        getLayerId(layer: ILayer): number;
 
         /**
           * Removes all the layers from the group.
