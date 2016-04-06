@@ -28,7 +28,7 @@ function makeRow(props: EarthQuakes.EarthQuakeProperties) {
   return row;
 }
 
-var quakes = Rx.Observable.interval(5000)
+var quakes$ = Rx.Observable.interval(5000)
     .flatMap(() => {
         return Rx.DOM.jsonpRequest<EarthQuakes.Dataset>({
             url: QUAKE_URL,
@@ -44,19 +44,34 @@ var quakes = Rx.Observable.interval(5000)
     })
     .distinct(quake => quake.properties["code"]).publish();
 
-let quakesMapInfo = quakes
+let quakesMapInfo$ = quakes$
     .map(quake => {
         return {
             id: quake.id,
             lat: quake.geometry.coordinates[1],
             lng: quake.geometry.coordinates[0],
+            mag: quake.properties.mag,
             size: quake.properties.mag * 10000
         };
     });
-    
+
+let quakeTableRows$ = quakes$
+    .pluck<EarthQuakes.EarthQuakeProperties>('properties')
+    .map(makeRow)
+    .bufferWithTime(500)
+    .filter(rows => rows.length > 0)
+    .map(rows => {
+        var fragment = document.createDocumentFragment();
+        rows.forEach(function(row) {
+            fragment.appendChild(row);
+        });
+        return fragment;
+    });
     
 
 function run() {
+    var socket = Rx.DOM.fromWebSocket('ws://127.0.0.1:8080', null);
+    
     var map = L.map('map').setView([43.804133, -120.554201], 7); //<!-- (3) -->
     L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map); //<!-- (4) -->
     
@@ -64,25 +79,23 @@ function run() {
     let quakeLayer = L.layerGroup([]).addTo(map);
 
 
-    quakesMapInfo.subscribe(quake => {
+    quakesMapInfo$.subscribe(quake => {
         let circle = L.circle([quake.lat, quake.lng], quake.size).addTo(map);
         quakeLayer.addLayer(circle);
         codeLayers[quake.id] = quakeLayer.getLayerId(circle).toString();
     });
     
+    quakesMapInfo$.bufferWithCount(100)
+        .subscribe(quakes => {
+            socket.onNext(JSON.stringify({quakes}));
+        });
+        
+    socket.subscribe((message: { data: string }) => {
+        console.log(JSON.parse(message.data));
+    });
+    
     var table = document.getElementById('quakes_info') as HTMLTableElement;
-    quakes
-        .pluck<EarthQuakes.EarthQuakeProperties>('properties')
-        .map(makeRow)
-        .bufferWithTime(500)
-        .filter(rows => rows.length > 0)
-        .map(rows => {
-            var fragment = document.createDocumentFragment();
-            rows.forEach(function(row) {
-                fragment.appendChild(row);
-            });
-            return fragment;
-        })
+    quakeTableRows$
         .subscribe(function(fragment) { 
             table.appendChild(fragment); 
         });
@@ -103,7 +116,7 @@ function run() {
        map.panTo(circle.getLatLng()); 
     });
     
-    quakes.connect();
+    quakes$.connect();
 }
 
 export default run;

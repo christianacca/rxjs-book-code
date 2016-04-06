@@ -18,7 +18,9 @@
   "dependencies": {
     "rx": "^4.0.8",
     "rx-dom": "^7.0.3",
-    "systemjs": "^0.19.17"
+    "systemjs": "^0.19.17",
+    "twit": "^2.2.3",
+    "ws": "^1.0.1"
   },
   "devDependencies": {
     "concurrently": "^1.0.0",
