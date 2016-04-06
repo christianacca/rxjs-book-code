@@ -167,6 +167,18 @@ export default class Game {
         this.gameCanvas.paintScore(score);
     }
     run() {
+        
+        // note: what I do NOT like about this solution is that heroShots$ stream
+        // depends on factors that are *defined outside* the stream -
+        // in this case the hasHit property on the shot gets set by the heroHits$
+        // stream
+        // This is not great as the stream should completely declare the factors 
+        // that determine which items will be emitted - similar to a formula in
+        // a spreadsheet
+        // In the end this solution was to resolve a circular reference between 
+        // the streams, just like the problem that formula's in a spreadsheet do 
+        // not work with circular cell references
+        
         let stars$ = this.createStars$();
         let heroShip$ = this.createHeroShip$().share(); 
         let heroShots$ = this.createHeroShots$(heroShip$).share();
